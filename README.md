@@ -32,23 +32,6 @@ This project blends **rule-based technical analysis** with **LLM-based risk filt
   - Built on `ccxt`
   - Live trading ready when enabled
 
----
-
-## 📂 Project Structure
-
-trading_bot/
-│
-├── bot.py # Main execution loop
-├── config.py # Configuration & constants
-├── exchange.py # Kraken (ccxt) wrapper
-├── indicators.py # EMA, RSI, feature engineering
-├── strategy.py # Deterministic trade logic
-├── llm_gatekeeper.py # OpenAI decision layer
-├── risk.py # Position sizing
-├── logger.py # JSON logging
-├── requirements.txt
-└── .env # API keys (not committed)
-
 
 
 
