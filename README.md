@@ -124,9 +124,6 @@ Rules:
 
 1. Clone the repository
 
-git clone https://github.com/your-username/llm-gated-crypto-bot.git  
-cd llm-gated-crypto-bot
-
 2. Install dependencies
 
 pip install ccxt pandas numpy gradio python-dotenv openai
@@ -135,8 +132,7 @@ pip install ccxt pandas numpy gradio python-dotenv openai
 
 Create a .env file:
 
-OPENAI_API_KEY=your_openai_key  
-OPENAI_MODEL=gpt-4o-mini  
+OPENAI_API_KEY=your_openai_key   
 KRAKEN_API_KEY=your_kraken_key  
 KRAKEN_API_SECRET=your_kraken_secret
 
@@ -155,8 +151,7 @@ Use this mode for paper trading or live trading (after disabling DRY_RUN).
 
 python ui.py
 
-Then open:
-http://127.0.0.1:7860
+Then open the local server URL
 
 This mode runs only when the button is clicked.
 
