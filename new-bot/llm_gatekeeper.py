@@ -9,28 +9,43 @@ MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 JSON_PATTERN = re.compile(r"\{.*\}", re.DOTALL)
 
 def llm_decide(features: dict) -> dict:
+
     prompt = f"""
-You are a professional crypto trader.
+    You are a professional crypto trading risk gatekeeper.
 
-You must reply with ONLY valid JSON.
-No markdown.
-No explanation outside JSON.
+    Your task is NOT to find trades.
+    Your task is to EVALUATE the provided setup and decide whether it should be traded.
 
-Rules:
-- Approve TRADE only if conditions are high probability
-- Conservative bias
-- Risk-reward must be acceptable
+    You must be conservative.
+    If anything is unclear, risky, or misaligned → choose NO_TRADE.
 
-Input (JSON):
-{json.dumps(features, indent=2)}
+    You are given REAL indicator values and a PREDEFINED strategy signal.
+    Do NOT rely on general crypto knowledge alone.
 
-Return EXACTLY this schema:
-{{
-  "decision": "TRADE" | "NO_TRADE",
-  "confidence": 0-100,
-  "reason": "string"
-}}
-"""
+    Rules:
+    - Only approve trades with clear confluence
+    - Risk-reward must be acceptable (RR ≥ 2)
+    - Trend alignment must be respected
+    - Avoid overconfidence
+    - Prefer NO_TRADE over marginal trades
+
+    Input data (JSON):
+    {json.dumps(features, indent=2)}
+
+    Return ONLY valid JSON in this EXACT schema:
+
+    {{
+    "decision": "TRADE" | "NO_TRADE",
+    "side": "LONG" | "SHORT" | null,
+    "confidence": 0-100,
+    "reason": "short, precise explanation"
+    }}
+
+    Constraints:
+    - If decision is NO_TRADE → side MUST be null
+    - Confidence above 70 only for very strong setups
+    - Do not include markdown or extra text
+    """
 
     try:
         response = client.chat.completions.create(

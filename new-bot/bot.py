@@ -3,31 +3,53 @@ from indicators import prepare_df
 from strategy import trend_pullback_signal
 from llm_gatekeeper import llm_decide
 from logger import log
-from config import SYMBOL, TIMEFRAMES, DRY_RUN
+from config import SYMBOL, DRY_RUN
 import time
 
-def run():
-    ohlcv_1h = fetch_ohlcv(SYMBOL, "1h")
-    ohlcv_15m = fetch_ohlcv(SYMBOL, "15m")
-    ohlcv_5m = fetch_ohlcv(SYMBOL, "5m")
+
+def run(symbol=SYMBOL):
+    # --------------------------------------------------
+    # Fetch market data
+    # --------------------------------------------------
+    ohlcv_1h = fetch_ohlcv(symbol, "1h")
+    ohlcv_15m = fetch_ohlcv(symbol, "15m")
+    ohlcv_5m = fetch_ohlcv(symbol, "5m")
 
     df_1h = prepare_df(ohlcv_1h)
     df_15m = prepare_df(ohlcv_15m)
     df_5m = prepare_df(ohlcv_5m)
 
+    # --------------------------------------------------
+    # Strategy
+    # --------------------------------------------------
     signal = trend_pullback_signal(df_1h, df_15m, df_5m)
 
+    # --------------------------------------------------
+    # No setup → log and return
+    # --------------------------------------------------
     if not signal["setup"]:
         log({
-        "strategy_setup": signal["setup"],
-        "strategy_reasons": signal["reasons"],
-        "entry": signal["entry"],
-        "stop": signal["stop"],
-        "rr": signal["rr"]
-            })
+            "strategy_setup": False,
+            "strategy_reasons": signal["reasons"],
+            "entry": signal["entry"],
+            "stop": signal["stop"],
+            "rr": signal["rr"]
+        })
 
-        return
+        return {
+            "symbol": SYMBOL,
+            "signal": signal,
+            "decision": {
+                "decision": "NO_TRADE",
+                "side": None,
+                "confidence": 0,
+                "reason": "Strategy conditions not met"
+            }
+        }
 
+    # --------------------------------------------------
+    # LLM features
+    # --------------------------------------------------
     features = {
         "symbol": SYMBOL,
         "setup_detected": signal["setup"],
@@ -52,6 +74,9 @@ def run():
         }
     }
 
+    # --------------------------------------------------
+    # LLM decision
+    # --------------------------------------------------
     decision = llm_decide(features)
 
     log({
@@ -59,8 +84,33 @@ def run():
         "llm_decision": decision
     })
 
-    if decision["decision"] == "TRADE" and not DRY_RUN:
-        print("🚀 EXECUTE TRADE")
+    # --------------------------------------------------
+    # Execution (still gated)
+    # --------------------------------------------------
+    if decision["decision"] == "TRADE":
+        if decision["side"] == "LONG":
+            order_side = "buy"
+        elif decision["side"] == "SHORT":
+            order_side = "sell"
+        else:
+            order_side = None
+
+        if order_side and not DRY_RUN:
+            print(f"🚀 EXECUTE {order_side.upper()} TRADE")
+
+    # --------------------------------------------------
+    # Return result (important for UI / API)
+    # --------------------------------------------------
+    return {
+        "symbol": symbol,
+        "signal": signal,
+        "decision": decision
+    }
+
+
+def run_once(symbol):
+    return run(symbol)
+
 
 if __name__ == "__main__":
     while True:
