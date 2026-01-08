@@ -1,215 +1,216 @@
-# 🧠 LLM-Gated Crypto Trading Bot
 
-A **professional, risk-aware cryptocurrency trading system** that combines  
-**deterministic technical analysis** with a **Large Language Model (LLM) acting as a conservative risk gatekeeper**.
+# 🧠 Multi-Symbol Crypto Trading Bot (LLM-Gated)
 
-This project is designed to be **safe-first**, **explainable**, and **production-oriented**, supporting both:
-- 🤖 Automated execution (runs every 60 seconds)
-- 🖥️ Manual execution via UI (Gradio, button-based)
+A **professional, risk-aware crypto trading bot** designed to scan **multiple symbols in parallel**, evaluate **high-probability setups**, and filter trades using a **Large Language Model (LLM) as a conservative risk gatekeeper**.
 
----
+This project focuses on **decision quality, capital protection, and discipline** rather than overtrading.
 
-## 📌 Core Philosophy
-
-> The strategy finds trades.  
-> The LLM decides whether the trade deserves to exist.
-
-The LLM is **not a signal generator**.  
-It only evaluates already-detected setups and can **approve or veto** them.
-
-If anything is unclear → **NO_TRADE**.
+> ⚠️ This repository contains **NO UI**.  
+> It is a **pure backend / engine-level trading system**.
 
 ---
 
 ## ✨ Key Features
 
-- Multi-timeframe analysis (1H / 15M / 5M)
-- Trend-pullback trading strategy
-- LLM used strictly as a risk gatekeeper
-- Conservative bias (NO_TRADE by default)
-- DRY_RUN safety protection
-- Structured JSON logging
-- Gradio UI for manual execution & inspection
-- Clean, modular architecture ready for extension
+- ✅ **Multi-symbol scanning** (ETH, BTC, SOL, XRP, easily extensible)
+- ⚡ **Parallel execution** using `asyncio`
+- 🧠 **LLM-based trade approval** (conservative, risk-first)
+- 📊 **Multi-timeframe strategy** (1H / 15M / 5M)
+- 🧾 **Separate JSON logs per symbol**
+- 🛡️ **Strong trade filtering** (avoids chop & fake breakouts)
+- 🔁 **Automatic scan every 60 seconds**
+- 🚨 **DRY_RUN mode enabled by default**
 
 ---
 
-## 🧱 Project Structure
+## 🏗 Architecture Overview
 
-.
-├── bot.py               # Main orchestration (auto mode)
-├── ui.py                # Gradio UI (manual mode)
-├── config.py            # Global configuration
-├── exchange.py          # Exchange access (ccxt / Kraken)
-├── indicators.py        # EMA / RSI indicators
-├── strategy.py          # Trend pullback strategy
-├── llm_gatekeeper.py    # LLM decision logic
-├── risk.py              # Position sizing
-├── logger.py            # JSON logger
-├── bot_log.json         # Generated logs
-└── README.md
+```
+bot.py               → Async scheduler & multi-symbol runner
+config.py            → Symbols & global configuration
+exchange.py          → Exchange connection (CCXT)
+indicators.py        → EMA / RSI calculations
+strategy.py          → Trend + pullback strategy logic
+llm_gatekeeper.py    → LLM-based trade approval
+risk.py              → Position sizing utilities
+logger.py            → Per-symbol JSON logging
+results/             → Output folder (auto-created)
+```
 
----
+Each symbol is:
+- Evaluated independently
+- Logged independently
+- Never shares state with others
 
-## 🧠 Strategy Overview
-
-### 1. Higher-Timeframe Trend (1H)
-- EMA50 > EMA200
-- Only bullish trend setups are allowed
-
-### 2. Pullback Condition (15M)
-- RSI between 40 and 60
-- Filters out overextended price moves
-
-### 3. Entry Confirmation (5M)
-At least one of the following must occur:
-- Strong bullish momentum candle
-- Clear lower-wick rejection (liquidity grab)
-
-### 4. Trade Levels
-- Entry: Current close
-- Stop: Recent swing low (with safety buffer)
-- Take-Profit: ~2.2× Risk
-- Minimum RR: ≥ 2.0
+This makes the system **safe, scalable, and debuggable**.
 
 ---
 
-## 🧠 LLM Gatekeeper
+## 📈 Strategy Logic (High Level)
 
-The LLM acts as a **risk evaluator**, not a trader.
+1️⃣ **Trend Detection (1H)**  
+- EMA50 > EMA200 → bullish bias
 
-### What the LLM DOES
-- Evaluates confluence
-- Confirms trend alignment
-- Validates risk–reward
-- Approves or vetoes trades conservatively
+2️⃣ **Pullback Validation (15M)**  
+- RSI between 40–60
 
-### What the LLM DOES NOT DO
-- Invent strategies
-- Use generic market sentiment
-- Ignore provided indicators
-- Force trades
+3️⃣ **Entry Confirmation (5M)**  
+- Momentum candle **OR**
+- Strong bullish wick rejection
 
----
+4️⃣ **Risk Management**
+- Stop below recent swing low
+- Fixed RR ≈ 2.2
 
-## 📐 LLM Output Schema
+5️⃣ **LLM Gatekeeper**
+- Final approval or rejection
+- Prefers `NO_TRADE` over marginal setups
 
-{
-  "decision": "TRADE" | "NO_TRADE",
-  "side": "LONG" | "SHORT" | null,
-  "confidence": 0-100,
-  "reason": "short explanation"
-}
-
-Rules:
-- If decision is NO_TRADE → side must be null
-- Confidence above 70 only for very strong setups
-- JSON only (no markdown, no prose)
+> 💡 The bot is designed to **skip low-quality trades**, even in bullish trends.
 
 ---
 
-## 🔐 Safety & Risk Controls
+## 🧠 Role of the LLM
 
-- DRY_RUN = True by default
-- Trades execute only if:
-  1. Strategy setup is valid
-  2. LLM approves the trade
-  3. DRY_RUN is disabled
+The LLM does **NOT** generate signals.
 
-⚠️ Never disable DRY_RUN without extensive testing.
+It acts as a **risk gatekeeper**, evaluating:
+- Momentum quality
+- Confluence
+- Risk–reward sanity
+- Indicator alignment
+
+If anything is unclear → **NO_TRADE**.
+
+This dramatically reduces:
+- Overtrading
+- Emotional bias
+- False breakouts
 
 ---
 
-## 🧪 Installation
+## ⚙️ Configuration
 
-1. Clone the repository
+### `config.py`
+```python
+SYMBOLS = [
+    "ETH/USDT",
+    "BTC/USDT",
+    "SOL/USDT",
+    "XRP/USDT",
+]
 
-2. Install dependencies
+DRY_RUN = True  # 🚨 Keep TRUE until fully tested
+```
 
-pip install ccxt pandas numpy gradio python-dotenv openai
+You can add or remove symbols freely.
 
-3. Environment variables
+---
 
-Create a .env file:
+## ▶️ How to Run
 
-OPENAI_API_KEY=your_openai_key   
-KRAKEN_API_KEY=your_kraken_key  
+### 1️⃣ Install dependencies
+```bash
+pip install ccxt pandas numpy python-dotenv openai
+```
+
+### 2️⃣ Set environment variables
+Create a `.env` file:
+```env
+OPENAI_API_KEY=your_openai_key
+OPENAI_MODEL=gpt-4o-mini
+
+KRAKEN_API_KEY=your_kraken_key
 KRAKEN_API_SECRET=your_kraken_secret
+```
 
----
-
-## 🚀 Running the Bot (Automated Mode)
-
+### 3️⃣ Run the bot
+```bash
 python bot.py
+```
 
-Runs every 60 seconds.  
-Use this mode for paper trading or live trading (after disabling DRY_RUN).
-
----
-
-## 🖥️ Running the UI (Manual Mode)
-
-python ui.py
-
-Then open the local server URL
-
-This mode runs only when the button is clicked.
+The bot will:
+- Scan all symbols every **60 seconds**
+- Print decisions in terminal
+- Append results to JSON files
 
 ---
 
-## 🔁 Automated Mode vs UI Mode
+## 📂 Output Format
 
-Automated Mode:
-- Runs every 60 seconds
-- Suitable for background execution
+A `results/` folder is created automatically:
 
-UI Mode:
-- Manual execution only
-- Suitable for debugging and inspection
+```
+results/
+├─ ETH_USDT.json
+├─ BTC_USDT.json
+├─ SOL_USDT.json
+└─ XRP_USDT.json
+```
 
-Do not run both modes simultaneously.
+Each file contains newline-delimited JSON entries:
+
+```json
+{
+  "symbol": "ETH/USDT",
+  "strategy_signal": {...},
+  "decision": {
+    "decision": "NO_TRADE",
+    "confidence": 60,
+    "reason": "No momentum or wick rejection on 5M"
+  },
+  "timestamp": "2026-01-08T16:02:11Z"
+}
+```
+
+Perfect for:
+- Backtesting
+- Dashboards
+- Performance analysis
 
 ---
 
-## 📊 Logging
+## 🛡 Safety Notes
 
-All activity is logged to bot_log.json.
-
-Each log entry includes:
-- Timestamp
-- Strategy output
-- LLM decision
-- Execution status
-
-Useful for debugging, analysis, and backtesting.
+- 🚨 **DRY_RUN is ON by default**
+- No orders are placed unless explicitly enabled
+- LLM failures automatically result in `NO_TRADE`
+- Each symbol is isolated (no cascading risk)
 
 ---
 
-## 🛠️ Extensibility Roadmap
+## 🚀 Future Improvements
 
-- Multi-symbol trading
-- Cooldown & trade memory
-- Backtesting engine
-- Confidence calibration
-- Telegram / Discord alerts
-- Performance dashboards
+This architecture is intentionally extensible:
+
+- 🔢 Symbol ranking & best-trade selection
+- 💰 Portfolio-level risk allocation
+- 📩 Telegram / Discord alerts
+- 📊 Performance analytics per symbol
+- 🔄 Multiple strategies in parallel
 
 ---
 
 ## ⚠️ Disclaimer
 
-This software is provided for educational and research purposes only.  
-Cryptocurrency trading involves significant financial risk.
+This software is for **educational and research purposes only**.
 
-You are solely responsible for any trades executed using this system.
+Trading cryptocurrencies involves significant risk.  
+The author assumes **no responsibility** for financial losses.
+
+Always test thoroughly before live deployment.
 
 ---
 
-## 🙌 Final Note
+## 🏁 Final Note
 
-This bot is intentionally conservative.
+This project prioritizes **discipline over frequency**.
 
-If you understand why it refuses trades,  
-you are using it correctly.
+> *Missing bad trades is a feature, not a bug.*
 
-Build safely. Trade responsibly.
+If you value:
+- Capital preservation
+- Clean architecture
+- Professional-grade logic
+
+You are using the right system.
