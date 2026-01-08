@@ -1,13 +1,16 @@
+# bot.py
+
+import asyncio
 from exchange import fetch_ohlcv
 from indicators import prepare_df
 from strategy import trend_pullback_signal
 from llm_gatekeeper import llm_decide
 from logger import log
-from config import SYMBOL, DRY_RUN
-import time
+from config import SYMBOLS, DRY_RUN
+from datetime import datetime
 
 
-def run(symbol=SYMBOL):
+async def analyze_symbol(symbol: str) -> dict:
     # --------------------------------------------------
     # Fetch market data
     # --------------------------------------------------
@@ -28,30 +31,26 @@ def run(symbol=SYMBOL):
     # No setup → log and return
     # --------------------------------------------------
     if not signal["setup"]:
-        log({
-            "strategy_setup": False,
-            "strategy_reasons": signal["reasons"],
-            "entry": signal["entry"],
-            "stop": signal["stop"],
-            "rr": signal["rr"]
-        })
-
-        return {
-            "symbol": SYMBOL,
-            "signal": signal,
+        result = {
+            "symbol": symbol,
+            "strategy_signal": signal,
             "decision": {
                 "decision": "NO_TRADE",
                 "side": None,
                 "confidence": 0,
                 "reason": "Strategy conditions not met"
-            }
+            },
+            "timestamp": datetime.utcnow().isoformat()
         }
+
+        log(symbol, result)
+        return result
 
     # --------------------------------------------------
     # LLM features
     # --------------------------------------------------
     features = {
-        "symbol": SYMBOL,
+        "symbol": symbol,
         "setup_detected": signal["setup"],
         "strategy_reasons": signal["reasons"],
         "trend": signal["trend"],
@@ -79,40 +78,42 @@ def run(symbol=SYMBOL):
     # --------------------------------------------------
     decision = llm_decide(features)
 
-    log({
+    result = {
+        "symbol": symbol,
         "strategy_signal": signal,
-        "llm_decision": decision
-    })
+        "decision": decision,
+        "timestamp": datetime.utcnow().isoformat()
+    }
+
+    log(symbol, result)
 
     # --------------------------------------------------
     # Execution (still gated)
     # --------------------------------------------------
-    if decision["decision"] == "TRADE":
-        if decision["side"] == "LONG":
-            order_side = "buy"
-        elif decision["side"] == "SHORT":
-            order_side = "sell"
-        else:
-            order_side = None
+    if decision["decision"] == "TRADE" and not DRY_RUN:
+        print(f"🚀 EXECUTE {decision['side']} on {symbol}")
 
-        if order_side and not DRY_RUN:
-            print(f"🚀 EXECUTE {order_side.upper()} TRADE")
-
-    # --------------------------------------------------
-    # Return result (important for UI / API)
-    # --------------------------------------------------
-    return {
-        "symbol": symbol,
-        "signal": signal,
-        "decision": decision
-    }
+    return result
 
 
-def run_once(symbol):
-    return run(symbol)
+async def run_loop():
+    print("🟢 Multi-symbol bot started (60s interval)")
+
+    while True:
+        start = datetime.utcnow().isoformat()
+        print(f"\n⏱ Scan started at {start}")
+
+        tasks = [analyze_symbol(symbol) for symbol in SYMBOLS]
+        results = await asyncio.gather(*tasks)
+
+        for r in results:
+            print(f"{r['symbol']} → {r['decision']['decision']}")
+
+        # --------------------------------------------------
+        # Wait 60 seconds before next scan
+        # --------------------------------------------------
+        await asyncio.sleep(60)
 
 
 if __name__ == "__main__":
-    while True:
-        run()
-        time.sleep(60)
+    asyncio.run(run_loop())

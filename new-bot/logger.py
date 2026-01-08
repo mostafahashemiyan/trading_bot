@@ -1,7 +1,16 @@
+# logger.py
+
 import json
+import os
 from datetime import datetime
 
-def log(data):
+LOG_DIR = "results"
+os.makedirs(LOG_DIR, exist_ok=True)
+
+def log(symbol: str, data: dict):
     data["time"] = datetime.utcnow().isoformat()
-    with open("bot_log.json", "a") as f:
+    filename = f"{symbol.replace('/', '_')}.json"
+    path = os.path.join(LOG_DIR, filename)
+
+    with open(path, "a") as f:
         f.write(json.dumps(data) + "\n")

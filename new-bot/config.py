@@ -1,4 +1,12 @@
-SYMBOL = "ETH/USDT"
+# config.py
+
+SYMBOLS = [
+    "ETH/USDT",
+    "BTC/USDT",
+    "SOL/USDT",
+    "XRP/USDT",
+]
+
 TIMEFRAMES = ["1h", "15m", "5m"]
 
 RISK_PER_TRADE = 0.01        # 1%
