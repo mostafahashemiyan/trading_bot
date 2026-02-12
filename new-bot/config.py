@@ -2,9 +2,6 @@
 
 SYMBOLS = [
     "ETH/USDT",
-    "BTC/USDT",
-    "SOL/USDT",
-    "XRP/USDT",
 ]
 
 TIMEFRAMES = ["1h", "15m", "5m"]
