@@ -5,10 +5,11 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-exchange = ccxt.kraken(
+exchange = ccxt.kucoin(
     {
-        "apiKey": os.getenv("KRAKEN_API_KEY"),
-        "secret": os.getenv("KRAKEN_API_SECRET"),
+        "apiKey": os.getenv("KUCOIN_API_KEY"),
+        "secret": os.getenv("KUCOIN_API_SECRET"),
+        "password": os.getenv("KUCOIN_API_PASSPHRASE"),
         "enableRateLimit": True,
     }
 )
@@ -78,19 +79,20 @@ def execute_trade(
         # Kraken Stop Loss
         sl_order = exchange.create_order(
             symbol, "stop-loss", exit_side, amount, params={"stopPrice": stop_loss}
-        )
+        )  # `stop-loss` may need to be changed into `limit`
+
         print(f"SL Placed at {stop_loss}: {sl_order['id']}")
 
         # 4. Place Take Profit
         tp_order = exchange.create_order(
             symbol,
-            "take-profit",
+            "limit",  # `take-profit` if not `limit` didn't work
             exit_side,
             amount,
-            params={
-                "price": take_profit
-            },
+            price=take_profit,
+            params={"reduceOnly": True},
         )
+
         print(f"TP Placed at {take_profit}: {tp_order['id']}")
 
         return {

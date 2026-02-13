@@ -6,16 +6,15 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-exchange = ccxt.kraken(
-    {
-        "apiKey": os.getenv("KRAKEN_API_KEY"),
-        "secret": os.getenv("KRAKEN_API_SECRET"),
-    }
-)
+exchange = ccxt.kucoin({
+    "apiKey": os.getenv("KUCOIN_API_KEY"),
+    "secret": os.getenv("KUCOIN_API_SECRET"),
+    "password": os.getenv("KUCOIN_API_PASSPHRASE"),
+})
 
 
 def fetch_closed_trades():
-    # Kraken 'closed' orders includes cancelled ones --> we filter by status='closed' and filled > 0
+    # Kucoin might require a symbol for fetch_closed_orders in some cases
     orders = exchange.fetch_closed_orders(limit=50)
 
     trades = []
