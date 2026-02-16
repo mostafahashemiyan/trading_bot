@@ -142,6 +142,9 @@ async def analyze_symbol(symbol: str) -> dict:
 
         return result
 
+    # Ensure we always return the result dict even when not trading
+    return result
+
 
 async def run_loop():
     print("🟢 Multi-symbol bot started (60s interval)")
