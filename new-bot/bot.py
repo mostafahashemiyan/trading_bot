@@ -7,7 +7,7 @@ from strategy import safe_short_signal
 from llm_gatekeeper import llm_decide
 from tracker import save_trade, generate_report
 from logger import log
-from config import SYMBOLS, DRY_RUN, RISK_PER_TRADE
+from config import SYMBOLS, DRY_RUN, RISK_PER_TRADE, HTF_TIMEFRAME
 
 
 # Keep per-symbol state in-memory (for min-gap between trades)
@@ -31,18 +31,18 @@ async def analyze_symbol(symbol: str) -> dict:
     # Fetch market data
     # --------------------------------------------------
     ohlcv_1h = fetch_ohlcv(symbol, "1h")
-    ohlcv_15m = fetch_ohlcv(symbol, "15m")
+    ohlcv_htf = fetch_ohlcv(symbol, HTF_TIMEFRAME)
     ohlcv_5m = fetch_ohlcv(symbol, "5m")
 
     df_1h = prepare_df(ohlcv_1h)
-    df_15m = prepare_df(ohlcv_15m)
+    df_htf = prepare_df(ohlcv_htf)
     df_5m = prepare_df(ohlcv_5m)
 
     # --------------------------------------------------
     # Strategy (NEW)
     # --------------------------------------------------
     last_trade_bar = LAST_TRADE_BAR.get(symbol)
-    signal = safe_short_signal(df_15m, df_5m, last_trade_bar=last_trade_bar)
+    signal = safe_short_signal(df_htf, df_5m, last_trade_bar=last_trade_bar)
 
     # --------------------------------------------------
     # No setup → log and return
@@ -81,10 +81,10 @@ async def analyze_symbol(symbol: str) -> dict:
                 "ema50": round(float(df_1h["ema50"].iloc[-1]), 6),
                 "ema200": round(float(df_1h["ema200"].iloc[-1]), 6),
             },
-            "15m": {
-                "ema50": round(float(df_15m["ema50"].iloc[-1]), 6),
-                "ema200": round(float(df_15m["ema200"].iloc[-1]), 6),
-                "rsi": round(float(df_15m["rsi"].iloc[-1]), 2),
+            f"{HTF_TIMEFRAME}": {
+                "ema50": round(float(df_htf["ema50"].iloc[-1]), 6),
+                "ema200": round(float(df_htf["ema200"].iloc[-1]), 6),
+                "rsi": round(float(df_htf["rsi"].iloc[-1]), 2),
             },
             "5m": {
                 "close": round(float(df_5m["close"].iloc[-1]), 6),

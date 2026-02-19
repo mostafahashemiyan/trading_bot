@@ -1,7 +1,7 @@
 # config.py
 
 SYMBOLS = [
-    "BTC/USDT",
+    "ETH/USDT",
 ]
 
 TIMEFRAMES = ["1h", "15m", "5m"]
@@ -9,6 +9,14 @@ TIMEFRAMES = ["1h", "15m", "5m"]
 # Execution / Risk
 RISK_PER_TRADE = 0.01        # 1%
 DRY_RUN = True              # 🚨 keep TRUE until confident
+
+# --- Market type ---
+# This strategy is SHORT-only. Spot markets cannot short. Use KuCoin Futures (swap) for real shorts.
+USE_FUTURES = True
+
+# Futures risk settings
+LEVERAGE = 3                 # set leverage when supported
+MARGIN_MODE = "cross"        # "cross" or "isolated" (best-effort; exchange may ignore)
 
 # --- Strategy: 5M Trend + Structure + Pullback (Safe Short) ---
 HTF_TIMEFRAME = "15m"        # Pine input.timeframe("15")

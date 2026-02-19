@@ -29,8 +29,10 @@ def _pivot_high_confirmed(high: pd.Series, left: int, right: int) -> pd.Series:
         window = h[i - left : i + right + 1]
         if np.isnan(window).any():
             continue
-        if h[i] == np.max(window):
-            out[i + right] = h[i]
+        center = h[i]
+        others = np.concatenate([window[:left], window[left + 1:]])
+        if center > np.max(others):
+            out[i + right] = center
 
     return pd.Series(out, index=high.index)
 
@@ -189,10 +191,9 @@ def safe_short_signal(df_htf: pd.DataFrame, df_ltf: pd.DataFrame, last_trade_bar
             ],
         }
     )
-
+    print(signal)
     return signal
-
-
+    
 # --- Old strategy kept for reference / fallback (not used by bot anymore unless you wire it back) ---
 
 def trend_pullback_signal(df_1h, df_15m, df_5m):
