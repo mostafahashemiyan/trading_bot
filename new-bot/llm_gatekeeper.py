@@ -1,12 +1,15 @@
 import json
 import os
 import re
+
 from openai import OpenAI
+from config import MIN_RR
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
 JSON_PATTERN = re.compile(r"\{.*\}", re.DOTALL)
+
 
 def llm_decide(features: dict) -> dict:
 
@@ -24,7 +27,7 @@ def llm_decide(features: dict) -> dict:
 
     Rules:
     - Only approve trades with clear confluence
-    - Risk-reward must be acceptable (RR ≥ 2)
+    - Risk-reward must be acceptable (RR ≥ {MIN_RR})
     - Trend alignment must be respected
     - Avoid overconfidence
     - Prefer NO_TRADE over marginal trades
@@ -71,11 +74,27 @@ def llm_decide(features: dict) -> dict:
         if data.get("decision") not in ["TRADE", "NO_TRADE"]:
             raise ValueError("Invalid decision field")
 
+        # Enforce min RR locally as well (extra safety)
+        rr = features.get("rr")
+        try:
+            rr_val = float(rr) if rr is not None else 0.0
+        except Exception:
+            rr_val = 0.0
+
+        if rr_val < float(MIN_RR):
+            return {
+                "decision": "NO_TRADE",
+                "side": None,
+                "confidence": 0,
+                "reason": f"RR {rr_val:.2f} is below minimum {MIN_RR}",
+            }
+
         return data
 
     except Exception as e:
         return {
             "decision": "NO_TRADE",
+            "side": None,
             "confidence": 0,
-            "reason": f"LLM parsing failure: {str(e)}"
+            "reason": f"LLM parsing failure: {str(e)}",
         }
