@@ -1,7 +1,7 @@
 # config.py
 
 SYMBOLS = [
-    "ETH/USDT",
+    "BTC/USDT",
 ]
 
 TIMEFRAMES = ["1h", "15m", "5m"]
