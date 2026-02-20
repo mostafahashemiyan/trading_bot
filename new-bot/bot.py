@@ -38,6 +38,41 @@ async def analyze_symbol(symbol: str) -> dict:
     df_htf = prepare_df(ohlcv_htf)
     df_5m = prepare_df(ohlcv_5m)
 
+    # ✅ IMPORTANT: Use only CLOSED candles (match TradingView/Pine default behavior)
+    # Most exchanges return the current forming candle in OHLCV; drop it.
+    if len(df_1h) > 1:
+        df_1h = df_1h.iloc[:-1].copy()
+    if len(df_htf) > 1:
+        df_htf = df_htf.iloc[:-1].copy()
+    if len(df_5m) > 1:
+        df_5m = df_5m.iloc[:-1].copy()
+
+    # Safety: if not enough bars after dropping, skip
+    if len(df_5m) < 3 or len(df_htf) < 3:
+        result = {
+            "symbol": symbol,
+            "strategy_signal": {
+                "trend": "neutral",
+                "setup": False,
+                "side": None,
+                "entry": None,
+                "stop": None,
+                "tp": None,
+                "rr": None,
+                "reasons": ["Not enough CLOSED candles after dropping forming candle"],
+                "bar_index": None,
+            },
+            "decision": {
+                "decision": "NO_TRADE",
+                "side": None,
+                "confidence": 0,
+                "reason": "Insufficient closed candle data",
+            },
+            "timestamp": datetime.utcnow().isoformat(),
+        }
+        log(symbol, result)
+        return result
+
     # --------------------------------------------------
     # Strategy (NEW)
     # --------------------------------------------------

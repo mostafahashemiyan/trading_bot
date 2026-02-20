@@ -76,9 +76,10 @@ def safe_short_signal(df_htf: pd.DataFrame, df_ltf: pd.DataFrame, last_trade_bar
     htf_ema200 = float(df_htf["ema200"].iloc[-1]) if "ema200" in df_htf else float(ema(df_htf["close"], 200).iloc[-1])
     htf_bear = htf_ema50 < htf_ema200
     if not htf_bear:
-        signal["reasons"].append("HTF not bearish (EMA50 >= EMA200)")
+        signal["reasons"].append(
+            f"HTF not bearish (EMA50={htf_ema50:.1f} >= EMA200={htf_ema200:.1f})"
+        )
         return signal
-
     # ----------------------
     # LTF TREND (5m)
     # ----------------------
@@ -191,9 +192,9 @@ def safe_short_signal(df_htf: pd.DataFrame, df_ltf: pd.DataFrame, last_trade_bar
             ],
         }
     )
-    print(signal)
     return signal
-    
+
+
 # --- Old strategy kept for reference / fallback (not used by bot anymore unless you wire it back) ---
 
 def trend_pullback_signal(df_1h, df_15m, df_5m):
