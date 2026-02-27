@@ -1,7 +1,7 @@
 # config.py
 
 SYMBOLS = [
-    "BTC/USDT",
+    "ETH/USDT",
 
 ]
 

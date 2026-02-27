@@ -90,41 +90,29 @@ async def analyze_symbol(symbol: str) -> dict:
 
     # --------------------------------------------------
     # Execution (still gated)
-    # --------------------------------------------------
-    if decision["decision"] == "TRADE":
-        side = decision.get("side", "buy").lower()
+    decision_status = decision.get("decision", "NO_TRADE")
 
-        if not side:
-            side = "buy"  # Fallback
+    if decision_status == "TRADE":
+            # Map the LLM's LONG/SHORT to the exchange's buy/sell
+            llm_side = decision.get("side", "").upper()
+            side = "buy" if llm_side == "LONG" else "sell" if llm_side == "SHORT" else None
+            if not side:
+                print(f"Skipping: Invalid side {llm_side}")
+                return result
 
-        if DRY_RUN:
-            print(f"[DRY RUN] Would execute {side.upper()} on {symbol}")
-            print(f"Entry: {signal['entry']} | SL: {signal['stop']} | TP: {signal['tp']}")
-
-            # Save "Paper Trade" to tracker
-            save_trade({
-                "timestamp": datetime.utcnow().isoformat(),
-                "symbol": symbol,
-                "side": side,
-                "type": "PAPER",
-                "entry": signal["entry"],
-                "stop": signal["stop"],
-                "tp": signal["tp"],
-                "size": "N/A"
-            })
-
-        else:
-            # LIVE EXECUTION
-            print(f"[LIVE] Initiating Trade on {symbol}...")
-
-            execution_data = execute_trade(
-                symbol=symbol,
-                side=side,
-                entry_price=signal["entry"],
-                stop_loss=signal["stop"],
-                take_profit=signal["tp"],
-                risk_per_trade=RISK_PER_TRADE
-            )
+            if DRY_RUN:
+                print(f"[DRY RUN] {side.upper()} {symbol}")
+                # ... keep your existing save_trade logic
+            else:
+                # LIVE EXECUTION
+                execution_data = execute_trade(
+                    symbol=symbol,
+                    side=side,
+                    entry_price=signal["entry"],
+                    stop_loss=signal["stop"],
+                    take_profit=signal["tp"],
+                    risk_per_trade=RISK_PER_TRADE
+                )
 
             if execution_data:
                 # Log success to tracker
@@ -140,7 +128,7 @@ async def analyze_symbol(symbol: str) -> dict:
                     "order_ids": execution_data
                 })
 
-        return result
+    return result
 
     # Ensure we always return the result dict even when not trading
     return result
