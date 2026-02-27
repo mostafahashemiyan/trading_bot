@@ -1,7 +1,7 @@
 # bot.py
 
 import asyncio
-from exchange import fetch_ohlcv, execute_trade
+from exchange import fetch_ohlcv, execute_trade, cancel_orphaned_orders
 from indicators import prepare_df
 from strategy import trend_pullback_signal
 from llm_gatekeeper import llm_decide
@@ -10,6 +10,8 @@ from logger import log
 from config import SYMBOLS, DRY_RUN, RISK_PER_TRADE
 from datetime import datetime
 
+# Global list to track active trade IDs for the Safety Check
+active_trades = [] 
 
 async def analyze_symbol(symbol: str) -> dict:
     # --------------------------------------------------
@@ -43,7 +45,6 @@ async def analyze_symbol(symbol: str) -> dict:
             },
             "timestamp": datetime.utcnow().isoformat()
         }
-
         log(symbol, result)
         return result
 
@@ -85,37 +86,40 @@ async def analyze_symbol(symbol: str) -> dict:
         "decision": decision,
         "timestamp": datetime.utcnow().isoformat()
     }
-
     log(symbol, result)
 
     # --------------------------------------------------
-    # Execution (still gated)
+    # Execution (Gated by LLM)
+    # --------------------------------------------------
     decision_status = decision.get("decision", "NO_TRADE")
 
     if decision_status == "TRADE":
-            # Map the LLM's LONG/SHORT to the exchange's buy/sell
-            llm_side = decision.get("side", "").upper()
-            side = "buy" if llm_side == "LONG" else "sell" if llm_side == "SHORT" else None
-            if not side:
-                print(f"Skipping: Invalid side {llm_side}")
-                return result
+        llm_side = decision.get("side", "").upper()
+        side = "buy" if llm_side == "LONG" else "sell" if llm_side == "SHORT" else None
+        
+        if not side:
+            print(f"Skipping: Invalid side {llm_side}")
+            return result
 
-            if DRY_RUN:
-                print(f"[DRY RUN] {side.upper()} {symbol}")
-                # ... keep your existing save_trade logic
-            else:
-                # LIVE EXECUTION
-                execution_data = execute_trade(
-                    symbol=symbol,
-                    side=side,
-                    entry_price=signal["entry"],
-                    stop_loss=signal["stop"],
-                    take_profit=signal["tp"],
-                    risk_per_trade=RISK_PER_TRADE
-                )
+        if DRY_RUN:
+            print(f"[DRY RUN] {side.upper()} {symbol} at {signal['entry']}")
+        else:
+            # LIVE EXECUTION
+            execution_data = execute_trade(
+                symbol=symbol,
+                side=side,
+                entry_price=signal["entry"],
+                stop_loss=signal["stop"],
+                take_profit=signal["tp"],
+                risk_per_trade=RISK_PER_TRADE
+            )
 
             if execution_data:
-                # Log success to tracker
+                # 1. Add to Safety Tracker for OCO cleanup
+                execution_data['symbol'] = symbol
+                active_trades.append(execution_data)
+
+                # 2. Log success to tracker
                 save_trade({
                     "timestamp": datetime.utcnow().isoformat(),
                     "symbol": symbol,
@@ -124,23 +128,28 @@ async def analyze_symbol(symbol: str) -> dict:
                     "entry": signal["entry"],
                     "stop": signal["stop"],
                     "tp": signal["tp"],
-                    "size": execution_data["amount"],
+                    "size": execution_data.get("amount", "N/A"),
                     "order_ids": execution_data
                 })
 
     return result
 
-    # Ensure we always return the result dict even when not trading
-    return result
-
-
 async def run_loop():
     print("🟢 Multi-symbol bot started (60s interval)")
-
-    # Startup report
     generate_report()
 
     while True:
+        # 🛡️ SAFETY CHECK: Cleanup orphaned orders (SL/TP)
+        if active_trades:
+            print(f"🔍 Checking {len(active_trades)} active trades for cleanup...")
+            for trade in active_trades[:]:
+                # If SL hit -> Cancel TP
+                if cancel_orphaned_orders(trade['symbol'], trade['sl_id'], trade['tp_id']):
+                    active_trades.remove(trade)
+                # If TP hit -> Cancel SL
+                elif cancel_orphaned_orders(trade['symbol'], trade['tp_id'], trade['sl_id']):
+                    active_trades.remove(trade)
+
         start = datetime.utcnow().isoformat()
         print(f"\n⏱ Scan started at {start}")
 
@@ -151,11 +160,10 @@ async def run_loop():
             dec = r.get('decision', {}).get('decision', 'N/A')
             print(f"{r['symbol']} → {dec}")
 
-        # --------------------------------------------------
-        # Wait 60 seconds before next scan
-        # --------------------------------------------------
         await asyncio.sleep(60)
 
-
 if __name__ == "__main__":
-    asyncio.run(run_loop())
+    try:
+        asyncio.run(run_loop())
+    except KeyboardInterrupt:
+        print("\n🛑 Bot stopped by user.")
