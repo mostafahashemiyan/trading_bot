@@ -27,27 +27,17 @@ def llm_decide(features: dict) -> dict:
             )
             
             raw = response.choices[0].message.content.strip()
+
+            # 1. Strip potential Markdown code blocks
             raw = raw.replace("```json", "").replace("```", "").strip()
-            
+
+            # 2. Use the Regex pattern to find the JSON block inside the text
             match = JSON_PATTERN.search(raw)
             if match:
-                # Successfully found JSON
                 return json.loads(match.group())
             else:
-                # Could not find JSON in the LLM text
-                print(f"⚠️ LLM did not return JSON. Raw output: {raw}")
-                return {
-                    "decision": "NO_TRADE",
-                    "side": None,
-                    "confidence": 0,
-                    "reason": "LLM failed to provide a valid JSON decision"
-                }
-
+                print(f"⚠️ LLM sent non-JSON text for {features['symbol']}")
+                return {"decision": "NO_TRADE", "reason": "Non-JSON response"}
+                
     except Exception as e:
-            print(f"❌ LLM Gateway Error: {str(e)}")
-            return {
-                "decision": "NO_TRADE",
-                "side": None,
-                "confidence": 0,
-                "reason": f"System error: {str(e)}"
-            }
+        return {"decision": "NO_TRADE", "reason": f"LLM Error: {str(e)}"}
