@@ -6,7 +6,7 @@ LOG_DIR = "reports"
 os.makedirs(LOG_DIR, exist_ok=True)
 
 def log_detailed_report(symbol: str, report_data: dict):
-    report_data["time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    report_data["time"] = datetime.utcnow().isoformat()
     filename = f"{symbol.replace('/', '_')}_logs.json"
     path = os.path.join(LOG_DIR, filename)
     

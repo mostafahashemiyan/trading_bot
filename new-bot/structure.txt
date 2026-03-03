@@ -2,11 +2,12 @@ trading_bot/
 │
 ├── bot.py                 # main loop
 ├── config.py              # config & constants
-├── exchange.py            # Kraken wrapper
+├── exchange.py            # KuCoin wrapper
 ├── indicators.py          # indicators & features
 ├── strategy.py            # deterministic strategy
-├── llm_gatekeeper.py      # OpenAI decision layer
+├── llm_gatekeeper.py      # OpenAI decision layer (optional)
 ├── risk.py                # position sizing
-├── logger.py              # logging
+├── report.py              # logging
+├── tracker.py             # trade tracking
 ├── requirements.txt
 └── .env                   # API keys

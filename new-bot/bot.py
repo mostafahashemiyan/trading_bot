@@ -1,79 +1,163 @@
+# bot.py
+"""
+Main live trading bot loop.
+Uses strategy → gatekeeper → execute (or dry run)
+"""
+
+import asyncio
 import time
+from datetime import datetime
+import ccxt.async_support as ccxt
+from dotenv import load_dotenv
+import os
+
+# Local imports
 import config
-from exchange import ExchangeClient
 from indicators import prepare_df
 from strategy import trend_pullback_signal
-from risk import position_size
-from tracker import TradeTracker
-from report import log_detailed_report # استفاده از لاگر جدید
+from risk import position_size, sl_tp_from_atr
+from llm_gatekeeper import llm_decide
 
-class TradingBot:
-    def __init__(self):
-        self.exchange = ExchangeClient()
-        self.tracker = TradeTracker()
+load_dotenv()
 
-    def run_once(self, symbol: str):
-        print(f"\n--- Checking {symbol} ---")
-        report = {"symbol": symbol, "step": "fetching_data", "status": "pending"}
+# ────────────────────────────────────────────────
+# Exchange setup
+# ────────────────────────────────────────────────
+exchange = ccxt.kucoinfutures({
+    'apiKey': os.getenv('KUCOIN_API_KEY'),
+    'secret': os.getenv('KUCOIN_API_SECRET'),
+    'password': os.getenv('KUCOIN_PASSPHRASE'),
+    'enableRateLimit': True,
+    'options': {'defaultType': 'swap'},
+})
 
-        # ۱. دریافت داده‌ها
-        ohlcv_1h = self.exchange.fetch_ohlcv(symbol, "1h", limit=300)
-        ohlcv_5m = self.exchange.fetch_ohlcv(symbol, "5m", limit=300)
-        
-        df1h = prepare_df(ohlcv_1h)
-        df5 = prepare_df(ohlcv_5m)
+# ────────────────────────────────────────────────
+# Helper functions
+# ────────────────────────────────────────────────
+async def fetch_ohlcv(symbol, timeframe, limit=200):
+    """Fetch OHLCV data asynchronously"""
+    return await exchange.fetch_ohlcv(symbol, timeframe, limit=limit)
 
-        if df1h.empty or df5.empty:
-            print(f"[{symbol}] Data empty or insufficient.")
-            return
 
-        # ۲. بررسی سیگنال
-        sig = trend_pullback_signal(df1h, df1h, df5) # استفاده از 1h برای هر دو جهت تست
-        report.update({
-            "step": "strategy_analysis",
-            "setup_found": sig.get("setup"),
-            "side": sig.get("side"),
-            "entry": sig.get("entry"),
-            "stop": sig.get("stop"),
-            "tp": sig.get("tp"),
-            "reasons": sig.get("reasons")
-        })
+async def get_balance():
+    """Get USDT free balance"""
+    bal = await exchange.fetch_balance()
+    return float(bal['USDT']['free'])
 
-        if not sig.get("setup"):
-            print(f"[{symbol}] No Signal: {sig.get('reasons')}")
-            log_detailed_report(symbol, report)
-            return
 
-        # ۳. ورود به معامله
-        print(f"[{symbol}] SIGNAL FOUND! Side: {sig['side']} | Entry: {sig['entry']}")
-        
-        balance = self.exchange.get_balance_usdt()
-        size = position_size(balance, sig['entry'], sig['stop'], config.RISK_PER_TRADE)
-        
-        if (size * sig['entry']) < config.MIN_NOTIONAL:
-            print(f"[{symbol}] Size too small, skipping.")
-            report["status"] = "skipped_small_size"
-            log_detailed_report(symbol, report)
-            return
+async def execute_trade(symbol, side, amount, sl, tp):
+    """Place market entry + SL + TP orders (dry run supported)"""
+    if config.DRY_RUN:
+        print(f"[DRY RUN] Would place {side} order for {amount:.4f} {symbol} | SL:{sl} TP:{tp}")
+        return {"status": "dry_run", "entry_price": "simulated"}
 
-        # اجرای دستور در صرافی
-        side = "buy" if sig["side"] == "LONG" else "sell"
-        result = self.exchange.execute_trade(symbol, side, size, sig['stop'], sig['tp'])
-        
-        report["status"] = "executed"
-        report["order_result"] = str(result)
-        log_detailed_report(symbol, report)
-        print(f"[{symbol}] Trade Executed Successfully.")
+    try:
+        # Market entry
+        order = await exchange.create_market_order(
+            symbol=symbol,
+            side=side.lower(),
+            amount=amount
+        )
 
-    def run(self):
-        print("Bot Started. Monitoring markets...")
-        while True:
-            for symbol in config.SYMBOLS:
-                try:
-                    self.run_once(symbol)
-                except Exception as e:
-                    print(f"CRITICAL ERROR for {symbol}: {e}")
-            time.sleep(60)
+        # Stop Loss
+        sl_side = 'sell' if side == 'buy' else 'buy'
+        sl_order = await exchange.create_order(
+            symbol=symbol,
+            type='stop_market',
+            side=sl_side,
+            amount=amount,
+            params={'stopPrice': sl, 'reduceOnly': True}
+        )
+
+        # Take Profit
+        tp_order = await exchange.create_limit_order(
+            symbol=symbol,
+            side=sl_side,
+            amount=amount,
+            price=tp,
+            params={'reduceOnly': True}
+        )
+
+        return {
+            "entry": order,
+            "sl": sl_order,
+            "tp": tp_order
+        }
+
+    except Exception as e:
+        print(f"Execution failed: {e}")
+        return None
+
+
+# ────────────────────────────────────────────────
+# Main loop
+# ────────────────────────────────────────────────
+async def main_loop():
+    print(f"Bot started – Dry run: {config.DRY_RUN}")
+
+    while True:
+        for symbol in config.SYMBOLS:
+            try:
+                print(f"\n[{datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}] Scanning {symbol}")
+
+                # Fetch data
+                ohlcv_high   = await fetch_ohlcv(symbol, config.HIGH_TF,   300)
+                ohlcv_medium = await fetch_ohlcv(symbol, config.MEDIUM_TF, 300)
+                ohlcv_low    = await fetch_ohlcv(symbol, config.LOW_TF,    300)
+
+                df_high   = prepare_df(ohlcv_high)
+                df_medium = prepare_df(ohlcv_medium)
+                df_low    = prepare_df(ohlcv_low)
+
+                if df_high.empty or df_medium.empty or df_low.empty:
+                    print(f"Insufficient data for {symbol}")
+                    continue
+
+                # Generate raw signal
+                signal = trend_pullback_signal(df_high, df_medium, df_low)
+
+                if not signal["setup"]:
+                    print(f"No setup → {signal['reasons']}")
+                    continue
+
+                print(f"Raw signal detected: {signal['side']} @ {signal['entry']}")
+
+                # LLM Gatekeeper
+                current_price = df_low['close'].iloc[-1]
+                decision = llm_decide(signal, symbol, current_price)
+
+                print(f"LLM decision: {decision['decision']} | {decision.get('reason')} | Confidence: {decision.get('confidence')}")
+
+                if decision["decision"] != "APPROVE":
+                    continue
+
+                # Position sizing
+                balance = await get_balance()
+                size = position_size(balance, signal["entry"], signal["sl"])
+
+                if size <= 0 or size * signal["entry"] < config.MIN_NOTIONAL_VALUE:
+                    print("Position size too small")
+                    continue
+
+                # Execute
+                side_exec = "buy" if signal["side"] == "LONG" else "sell"
+                result = await execute_trade(symbol, side_exec, size, signal["sl"], signal["tp"])
+
+                if result:
+                    print(f"Trade executed: {result}")
+                else:
+                    print("Execution failed")
+
+            except Exception as e:
+                print(f"Error on {symbol}: {e}")
+
+        await asyncio.sleep(300)  # هر ۵ دقیقه اسکن
+
 
 if __name__ == "__main__":
-    TradingBot().run()
+    try:
+        asyncio.run(main_loop())
+    except KeyboardInterrupt:
+        print("\nBot stopped by user.")
+    finally:
+        asyncio.run(exchange.close())

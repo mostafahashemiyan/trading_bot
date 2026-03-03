@@ -1,35 +1,45 @@
+"""
+Position sizing and SL/TP calculation.
+"""
+
 import config
 
 
-def position_size(balance: float, entry: float, stop: float, risk_pct: float) -> float:
-    """Position size in *base units* (e.g. ETH) for linear USDT-margined futures.
-
-    balance: available USDT collateral
-    entry/stop: prices
-    risk_pct: fraction of balance to risk
+def position_size(balance: float, entry: float, stop: float) -> float:
     """
-    risk_amount = float(balance) * float(risk_pct)
-    stop_distance = abs(float(entry) - float(stop))
+    Calculate position size in base asset (e.g. ETH).
+    Applies leverage and strict safety cap.
+    """
+    if balance <= 0:
+        return 0.0
+
+    risk_amount = balance * config.RISK_PER_TRADE
+    stop_distance = abs(entry - stop)
+
     if stop_distance <= 0:
         return 0.0
-    return risk_amount / stop_distance
+
+    size_base = risk_amount / stop_distance
+
+    # Hard cap on notional value
+    max_notional = balance * config.LEVERAGE * config.SAFETY_FACTOR
+    max_size = max_notional / entry
+
+    return min(size_base, max_size)
 
 
-def sl_tp_from_atr(side: str, entry: float, atr: float):
-    """Compute SL/TP using ATR multipliers from config.
-
-    side: "LONG" or "SHORT"
+def sl_tp_from_atr(side: str, entry: float, atr: float) -> tuple:
+    """
+    Return (stop_loss, take_profit) using ATR multipliers.
     """
     entry = float(entry)
     atr = float(atr)
-    sl_mult = float(getattr(config, "SL_ATR_MULT", 1.2))
-    tp_mult = float(getattr(config, "TP_ATR_MULT", 2.0))
 
-    if side == "LONG":
-        sl = entry - atr * sl_mult
-        tp = entry + atr * tp_mult
+    if side.upper() == "LONG":
+        sl = entry - atr * config.SL_ATR_MULT
+        tp = entry + atr * config.TP_ATR_MULT
     else:
-        sl = entry + atr * sl_mult
-        tp = entry - atr * tp_mult
+        sl = entry + atr * config.SL_ATR_MULT
+        tp = entry - atr * config.TP_ATR_MULT
 
     return sl, tp

@@ -1,4 +1,3 @@
-# tracker.py
 import json
 import os
 from datetime import datetime
@@ -45,23 +44,12 @@ def generate_report() -> None:
     df = pd.DataFrame(trades)
     total_trades = len(df)
     print(f"\n--- PERFORMANCE REPORT ({total_trades} Trades) ---")
-    cols = [c for c in ["timestamp", "symbol", "side", "entry", "stop", "tp", "size", "outcome"] if c in df.columns]
-    if cols:
-        print(df[cols].tail())
-    else:
-        print(df.tail())
+    cols = [c for c in ["timestamp", "symbol", "side", "entry", "stop", "tp", "size", "status", "outcome"] if c in df.columns]
+    print(df[cols].tail())
     print("------------------------------------------------------")
 
 
 class TradeTracker:
-    """Minimal tracker used by bot.py.
-
-    - Stores open trades in OPEN_TRADES_FILE.
-    - Appends entries to TRADE_FILE for audit.
-
-    This tracker does NOT compute realized PnL (that requires fills). It is mainly
-    used so the bot can keep TP/SL order ids and cancel the orphan.
-    """
 
     def __init__(self):
         self._open: List[Dict[str, Any]] = _read_json(OPEN_TRADES_FILE, [])
@@ -99,7 +87,6 @@ class TradeTracker:
         save_trade({**trade})
 
     def get_open_trades(self) -> List[Dict[str, Any]]:
-        # Refresh from disk in case another process modified it.
         self._open = _read_json(OPEN_TRADES_FILE, [])
         return list(self._open)
 
@@ -109,6 +96,7 @@ class TradeTracker:
             if t.get("symbol") == symbol and t.get("status") == "OPEN":
                 t["status"] = "CLOSED"
                 t["outcome"] = sl_or_tp
+                save_trade(t)  # Append to history
             updated.append(t)
-        self._open = updated
+        self._open = [t for t in updated if t["status"] != "CLOSED"]
         self._persist_open()
