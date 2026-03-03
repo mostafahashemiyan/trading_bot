@@ -1,49 +1,114 @@
 # tracker.py
 import json
 import os
-import pandas as pd
 from datetime import datetime
+from typing import Any, Dict, List, Optional
+
+import pandas as pd
 
 TRADE_FILE = "trades_log.json"
+OPEN_TRADES_FILE = "open_trades.json"
 
 
-def load_trades():
-    if not os.path.exists(TRADE_FILE):
-        return []
-
+def _read_json(path: str, default):
+    if not os.path.exists(path):
+        return default
     try:
-        with open(TRADE_FILE, "r") as f:
+        with open(path, "r") as f:
             return json.load(f)
+    except Exception:
+        return default
 
-    except:
-        return []
+
+def _write_json(path: str, data) -> None:
+    with open(path, "w") as f:
+        json.dump(data, f, indent=4)
 
 
-def save_trade(trade_data):
+def load_trades() -> List[Dict[str, Any]]:
+    return _read_json(TRADE_FILE, [])
+
+
+def save_trade(trade_data: Dict[str, Any]) -> None:
     trades = load_trades()
     trades.append(trade_data)
-    with open(TRADE_FILE, "w") as f:
-        json.dump(trades, f, indent=4)
+    _write_json(TRADE_FILE, trades)
     print(f"Trade saved to {TRADE_FILE}")
 
 
-def generate_report():
+def generate_report() -> None:
     trades = load_trades()
     if not trades:
         print("⚠ No trades found in log.")
         return
 
     df = pd.DataFrame(trades)
-
-    # Simple simulation of results (since we don't have a live feedback loop in this script yet)
-    # In a real scenario, you would update the 'outcome' field based on fetch_my_trades()
-
     total_trades = len(df)
     print(f"\n--- PERFORMANCE REPORT ({total_trades} Trades) ---")
-    print(df[["timestamp", "symbol", "side", "entry", "size"]].tail())
+    cols = [c for c in ["timestamp", "symbol", "side", "entry", "stop", "tp", "size", "outcome"] if c in df.columns]
+    if cols:
+        print(df[cols].tail())
+    else:
+        print(df.tail())
     print("------------------------------------------------------")
 
-    # If you implement PnL tracking later, you can calc win rate here:
-    # wins = df[df['pnl'] > 0]
-    # win_rate = len(wins) / total_trades * 100
-    # print(f"Win Rate: {win_rate}%")
+
+class TradeTracker:
+    """Minimal tracker used by bot.py.
+
+    - Stores open trades in OPEN_TRADES_FILE.
+    - Appends entries to TRADE_FILE for audit.
+
+    This tracker does NOT compute realized PnL (that requires fills). It is mainly
+    used so the bot can keep TP/SL order ids and cancel the orphan.
+    """
+
+    def __init__(self):
+        self._open: List[Dict[str, Any]] = _read_json(OPEN_TRADES_FILE, [])
+
+    def _persist_open(self):
+        _write_json(OPEN_TRADES_FILE, self._open)
+
+    def open_trade(
+        self,
+        symbol: str,
+        side: str,
+        entry_price: float,
+        stop_loss: float,
+        take_profit: float,
+        size: float,
+        entry_time: float,
+        sl_id: Optional[str] = None,
+        tp_id: Optional[str] = None,
+    ):
+        ts = datetime.utcfromtimestamp(entry_time).isoformat() + "Z"
+        trade = {
+            "timestamp": ts,
+            "symbol": symbol,
+            "side": side,
+            "entry": entry_price,
+            "stop": stop_loss,
+            "tp": take_profit,
+            "size": size,
+            "sl_id": sl_id,
+            "tp_id": tp_id,
+            "status": "OPEN",
+        }
+        self._open.append(trade)
+        self._persist_open()
+        save_trade({**trade})
+
+    def get_open_trades(self) -> List[Dict[str, Any]]:
+        # Refresh from disk in case another process modified it.
+        self._open = _read_json(OPEN_TRADES_FILE, [])
+        return list(self._open)
+
+    def mark_closed(self, symbol: str, sl_or_tp: str):
+        updated = []
+        for t in self._open:
+            if t.get("symbol") == symbol and t.get("status") == "OPEN":
+                t["status"] = "CLOSED"
+                t["outcome"] = sl_or_tp
+            updated.append(t)
+        self._open = updated
+        self._persist_open()

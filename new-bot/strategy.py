@@ -1,88 +1,69 @@
 def trend_pullback_signal(df_1h, df_15m, df_5m):
+    # Initialize the signal dictionary with default 'Neutral' states
     signal = {
         "trend": "neutral",
         "setup": False,
+        "side": None,
         "entry": None,
         "stop": None,
         "tp": None,
-        "rr": None,
+        "rr": 0,
         "reasons": []
     }
 
-    # --------------------------------------------------
-    # 1️⃣ Higher timeframe trend (1H)
-    # --------------------------------------------------
-    if df_1h["ema50"].iloc[-1] > df_1h["ema200"].iloc[-1]:
+    # 1. 1H Trend Analysis (Identify, don't exit early)
+    curr_1h = df_1h.iloc[-1]
+    if curr_1h["close"] > curr_1h["ema200"]:
         signal["trend"] = "bullish"
+        signal["side"] = "LONG"
+    elif curr_1h["close"] < curr_1h["ema200"]:
+        signal["trend"] = "bearish"
+        signal["side"] = "SHORT"
     else:
-        signal["reasons"].append("1H trend not bullish")
-        return signal
+        signal["reasons"].append("Price oscillating on 1H EMA200")
 
-    # --------------------------------------------------
-    # 2️⃣ Pullback condition (15M)
-    # --------------------------------------------------
+    # 2. 15M Pullback Logic (Broadened for LLM context)
     rsi_15 = df_15m["rsi"].iloc[-1]
-    if not (40 <= rsi_15 <= 60):
-        signal["reasons"].append("15M RSI not in pullback zone")
-        return signal
+    if signal["side"] == "LONG" and rsi_15 > 65:
+        signal["reasons"].append(f"15M RSI ({round(rsi_15, 2)}) high for a long pullback")
+    elif signal["side"] == "SHORT" and rsi_15 < 35:
+        signal["reasons"].append(f"15M RSI ({round(rsi_15, 2)}) low for a short pullback")
 
-    # --------------------------------------------------
-    # 3️⃣ Entry logic (5M) — MOMENTUM OR WICK
-    # --------------------------------------------------
+    # 3. 5M Entry Logic (Momentum & Wicks)
     last = df_5m.iloc[-1]
-
     body = abs(last["close"] - last["open"])
     range_ = last["high"] - last["low"]
     lower_wick = min(last["open"], last["close"]) - last["low"]
+    upper_wick = last["high"] - max(last["open"], last["close"])
 
-    bullish_momentum = (
-        last["close"] > last["open"] and
-        last["close"] > last["ema20"] and
-        body > 0.6 * range_
-    )
+    # Bullish and Bearish conditions
+    bull_mom = last["close"] > last["open"] and last["close"] > last["ema20"] and body > 0.5 * range_
+    bull_wick = last["close"] > last["open"] and lower_wick > 1.5 * body
+    bear_mom = last["close"] < last["open"] and last["close"] < last["ema20"] and body > 0.5 * range_
+    bear_wick = last["close"] < last["open"] and upper_wick > 1.5 * body
 
-    wick_rejection = (
-        last["close"] > last["open"] and
-        lower_wick > 2 * body
-    )
-
-    if bullish_momentum or wick_rejection:
+    if signal["side"] == "LONG" and (bull_mom or bull_wick):
+        signal["setup"] = True
+    elif signal["side"] == "SHORT" and (bear_mom or bear_wick):
         signal["setup"] = True
     else:
-        signal["reasons"].append("No momentum or wick rejection on 5M")
+        signal["reasons"].append("No 5M momentum/wick confirmation")
 
-    # --------------------------------------------------
-    # 4️⃣ Trade levels
-    # --------------------------------------------------
+    # 4. Trade Levels Calculation
     entry = last["close"]
-
-    # --------------------------------------------------
-    # Stop-loss: recent swing low (last 5 candles)
-    # --------------------------------------------------
-    recent_lows = df_5m["low"].iloc[-6:-1]
-    stop = recent_lows.min()
-
-    # Safety buffer (0.1%)
-    stop *= 0.999
-
-    risk = entry - stop
-    if risk <= 0:
-        signal["reasons"].append("Invalid stop placement")
-        return signal
-
-    # Take-profit: 2.2:1 reward-to-risk ratio
-    tp = entry + (risk * 2.2)
-    rr = (tp - entry) / risk
-
-    # --------------------------------------------------
-    # 5️⃣ Finalize
-    # --------------------------------------------------
-    signal.update({
-        "setup": True,
-        "entry": entry,
-        "stop": stop,
-        "tp": tp,
-        "rr": round(rr, 2)
-    })
+    recent_5m = df_5m.iloc[-6:-1]
+    
+    if signal["side"] == "LONG":
+        stop = recent_5m["low"].min() * 0.998 
+        risk = entry - stop
+        if risk > 0:
+            tp = entry + (risk * 2.2)
+            signal.update({"entry": entry, "stop": stop, "tp": tp, "rr": round((tp-entry)/risk, 2)})
+    elif signal["side"] == "SHORT":
+        stop = recent_5m["high"].max() * 1.002
+        risk = stop - entry
+        if risk > 0:
+            tp = entry - (risk * 2.2)
+            signal.update({"entry": entry, "stop": stop, "tp": tp, "rr": round((entry-tp)/risk, 2)})
 
     return signal
