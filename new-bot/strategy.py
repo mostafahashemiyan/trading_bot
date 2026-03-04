@@ -60,4 +60,5 @@ def trend_pullback_signal(df_high: pd.DataFrame, df_medium: pd.DataFrame, df_low
     if signal["setup"]:
         signal["entry"] = last["close"]
 
+
     return signal

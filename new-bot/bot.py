@@ -3,6 +3,8 @@
 Main live trading bot loop.
 Uses strategy -> gatekeeper -> execute (or dry run)
 """
+import asyncio
+asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 import asyncio
 import time
@@ -29,8 +31,8 @@ exchange = ccxt.kucoinfutures({
     'secret': os.getenv('KUCOIN_API_SECRET'),
     'password': os.getenv('KUCOIN_PASSPHRASE'),
     'enableRateLimit': True,
-    'timeout': 20000,
-    'options': {'defaultType': 'swap'},
+    'timeout': 60000,
+    'aiohttp_trust_env': True
 })
 
 # ────────────────────────────────────────────────

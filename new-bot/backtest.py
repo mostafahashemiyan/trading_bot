@@ -36,13 +36,12 @@ from strategy import trend_pullback_signal
 # ────────────────────────────────────────────────
 # Backtest settings
 # ────────────────────────────────────────────────
-SYMBOL = "ETH/USDT:USDT"
+SYMBOL = "DOGE/USDT:USDT"
 TIMEFRAME = "1h"
 
 BACKTEST_START = "2025-01-01T00:00:00Z"
 BACKTEST_END = None
-
-INITIAL_BALANCE = 10000.0
+INITIAL_BALANCE = 1000.0
 COMMISSION = 0.0006
 SLIPPAGE_PCT = 0.0005
 
