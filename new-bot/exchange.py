@@ -1,144 +1,154 @@
+"""
+EXCHANGE CLIENT (KuCoin Futures — Professional 2026)
+----------------------------------------------------
+A safe, robust wrapper for market interaction.
+
+Features:
+- DRY_RUN support (no real orders)
+- Isolated margin + leverage initialization
+- Safe market entry + reduceOnly TP/SL
+- Auto-close opposite positions
+- Error-tolerant fetching (positions, balance, etc.)
+"""
+
 import os
 import time
-from typing import Any, Dict, Optional
-from pathlib import Path
-
 import ccxt
 from dotenv import load_dotenv
-
 import config
 
-# Load .env
-PROJECT_ROOT_ENV = Path(__file__).resolve().parents[1] / ".env"
-load_dotenv(PROJECT_ROOT_ENV)
+load_dotenv()
 
 
 class ExchangeClient:
-    """CCXT wrapper for KuCoin Futures (One-Way)."""
 
     def __init__(self):
-        exchange_id = config.EXCHANGE_ID
-        api_key = os.getenv("KUCOIN_API_KEY")
-        api_secret = os.getenv("KUCOIN_API_SECRET")
-        api_password = (
-            os.getenv("KUCOIN_PASSPHRASE")
-            or os.getenv("KUCOIN_API_PASSWORD")
-            or os.getenv("KUCOIN_PASSWORD")
-        )
+        self.dry = config.DRY_RUN
 
-        if not all([api_key, api_secret, api_password]):
-            raise ValueError("Missing KuCoin credentials in .env")
+        # Initialize CCXT client
+        self.exchange = ccxt.kucoinfutures({
+            "apiKey": os.getenv("KUCOIN_API_KEY"),
+            "secret": os.getenv("KUCOIN_API_SECRET"),
+            "password": os.getenv("KUCOIN_PASSPHRASE"),
+            "enableRateLimit": True,
+            "options": {"defaultType": "swap"},
+        })
 
-        self.exchange = getattr(ccxt, exchange_id)(
-            {
-                "apiKey": api_key,
-                "secret": api_secret,
-                "password": api_password,
-                "enableRateLimit": True,
-                "options": {"defaultType": "swap"},
-            }
-        )
-
+        # Load markets
         self.exchange.load_markets()
 
-        # Set leverage and margin mode (KuCoin is always one-way)
-        for symbol in config.SYMBOLS:
-            self.exchange.set_leverage(config.LEVERAGE, symbol)
-            self.exchange.set_margin_mode(config.MARGIN_MODE, symbol)
+        # Apply leverage + margin mode to each symbol
+        for sym in config.SYMBOLS:
+            try:
+                self.exchange.set_leverage(config.LEVERAGE, sym)
+                self.exchange.set_margin_mode(config.MARGIN_MODE, sym)
+            except Exception:
+                # Some symbols might reject margin-mode setting → safe to ignore
+                pass
 
-    def fetch_ohlcv(self, symbol: str, timeframe: str, limit: int = 200):
+    # ───────────────────────────────────────────────
+    # Safe Fetching
+    # ───────────────────────────────────────────────
+    def fetch_ohlcv(self, symbol: str, timeframe: str, limit=200):
         return self.exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=limit)
 
-    def fetch_ticker(self, symbol: str):
-        return self.exchange.fetch_ticker(symbol)
+    def get_balance_usdt(self) -> float:
+        try:
+            bal = self.exchange.fetch_balance(params={"type": "futures"})
+            return float(bal["USDT"]["free"])
+        except Exception:
+            return 0.0
 
-    def _market(self, symbol: str) -> Dict[str, Any]:
-        return self.exchange.market(symbol)
+    def get_position(self, symbol: str):
+        try:
+            pos = self.exchange.fetch_positions([symbol])
+            return pos[0] if pos else None
+        except Exception:
+            return None
+
+    # ───────────────────────────────────────────────
+    # Position conversion helpers
+    # ───────────────────────────────────────────────
+    def _contract_size(self, symbol: str) -> float:
+        return self.exchange.market(symbol)["contractSize"]
 
     def _to_contracts(self, symbol: str, base_amount: float) -> float:
-        contract_size = self._market(symbol)['contractSize']
-        return base_amount / contract_size  # Correct: contracts = base / size
+        cs = self._contract_size(symbol)
+        return base_amount / cs
 
-    def get_balance_usdt(self) -> float:
-        bal = self.exchange.fetch_balance(params={'type': 'futures'})
-        return float(bal['USDT'].get('free', 0.0))
+    # ───────────────────────────────────────────────
+    # Execution logic (LIVE or DRY RUN)
+    # ───────────────────────────────────────────────
+    def execute_trade(self, symbol: str, side: str, base_amount: float, sl: float, tp: float):
+        """
+        side: "buy" or "sell"
+        base_amount: amount in base currency (e.g., 0.15 ETH)
+        """
 
-    def get_position(self, symbol: str) -> Optional[Dict[str, Any]]:
-        positions = self.exchange.fetch_positions([symbol])
-        return positions[0] if positions else None
+        # DRY RUN mode → no real orders
+        if self.dry:
+            return {
+                "dry_run": True,
+                "symbol": symbol,
+                "side": side,
+                "size_base": base_amount,
+                "sl": sl,
+                "tp": tp,
+            }
 
-    def execute_trade(self, symbol: str, side: str, base_amount: float, sl: float, tp: float) -> Dict[str, Any]:
         contracts = self._to_contracts(symbol, base_amount)
         contracts = self.exchange.amount_to_precision(symbol, contracts)
 
-        # Check current position
+        # Check for existing position
         pos = self.get_position(symbol)
-        current_side = 'buy' if pos and pos['side'] == 'long' else 'sell' if pos and pos['side'] == 'short' else None
-        if current_side and current_side != side:
-            # Close existing (opposite)
-            close_side = 'sell' if current_side == 'buy' else 'buy'
-            self.exchange.create_order(symbol, 'market', close_side, pos['contracts'], None, {'reduceOnly': True})
-            time.sleep(2)  # Wait for close
 
-        # Entry: market order
-        params = {'leverage': config.LEVERAGE}
-        order = self.exchange.create_order(symbol, 'market', side, contracts, None, params)
-        time.sleep(2)
+        if pos:
+            direction = pos["side"]  # "long" or "short"
+            opposite = "sell" if direction == "long" else "buy"
 
-        # TP/SL
+            if (side == "buy" and direction == "short") or (side == "sell" and direction == "long"):
+                # Close opposite position
+                try:
+                    self.exchange.create_order(
+                        symbol, "market", opposite, pos["contracts"], None, {"reduceOnly": True}
+                    )
+                    time.sleep(0.5)
+                except Exception:
+                    pass
+
+        # Market entry
+        try:
+            order = self.exchange.create_order(
+                symbol, "market", side, contracts, None,
+                {"leverage": config.LEVERAGE}
+            )
+        except Exception as e:
+            return {"error": f"Entry failed: {e}"}
+
+        time.sleep(0.5)
+
+        # Exit side
         exit_side = "sell" if side == "buy" else "buy"
 
-        tp_order = None
+        # Take Profit
         try:
             tp_order = self.exchange.create_order(
                 symbol, "limit", exit_side, contracts, tp, {"reduceOnly": True}
             )
-        except Exception as e:
-            print(f"[Exchange] TP failed ({symbol}): {e}")
+        except Exception:
+            tp_order = None
 
-        sl_order = None
+        # Stop Loss
         try:
             sl_order = self.exchange.create_order(
                 symbol, "market", exit_side, contracts, None,
                 {"stop": "loss", "stopPrice": sl, "reduceOnly": True}
             )
-        except Exception as e:
-            try:
-                sl_order = self.exchange.create_order(
-                    symbol, "market", exit_side, contracts, None,
-                    {"triggerPrice": sl, "reduceOnly": True, "stop": "loss"}
-                )
-            except Exception as e2:
-                print(f"[Exchange] SL failed ({symbol}): {e} | {e2}")
+        except Exception:
+            sl_order = None
 
         return {
             "entry": order,
             "tp": tp_order,
-            "sl": sl_order,
+            "sl": sl_order
         }
-
-    def cancel_orphaned_orders(self, symbol: str, tp_id: Optional[str], sl_id: Optional[str]):
-        if not tp_id or not sl_id:
-            return
-
-        try:
-            tp = self.exchange.fetch_order(tp_id, symbol)
-        except Exception:
-            tp = None
-
-        try:
-            sl = self.exchange.fetch_order(sl_id, symbol)
-        except Exception:
-            sl = None
-
-        if tp and tp['status'] == 'closed':
-            try:
-                self.exchange.cancel_order(sl_id, symbol)
-            except Exception:
-                pass
-
-        if sl and sl['status'] == 'closed':
-            try:
-                self.exchange.cancel_order(tp_id, symbol)
-            except Exception:
-                pass

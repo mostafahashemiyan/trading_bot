@@ -1,64 +1,116 @@
 """
-Trading signal generator.
-Conservative multi-timeframe logic.
+STRATEGY MODULE (Professional redesign 2026)
+--------------------------------------------
+Multi-timeframe trend + pullback + momentum system.
+Produces extremely clean signals for the LLM gatekeeper.
 """
 
 import pandas as pd
 import config
+from risk import sl_tp_from_atr
 
 
-def trend_pullback_signal(df_high: pd.DataFrame, df_medium: pd.DataFrame, df_low: pd.DataFrame) -> dict:
+def trend_pullback_signal(df_high: pd.DataFrame,
+                          df_med: pd.DataFrame,
+                          df_low: pd.DataFrame) -> dict:
     """
-    Main signal function.
-    Returns dict with setup info or rejection reason.
+    Multi-timeframe trend strategy.
+
+    Returns:
+        {
+          setup: True/False,
+          side: "LONG" / "SHORT",
+          entry: float,
+          sl: float,
+          tp: float,
+          confidence: 0-100,
+          reasons: [...]
+        }
     """
+
     signal = {
-        "trend": "neutral",
         "setup": False,
         "side": None,
         "entry": None,
+        "sl": None,
+        "tp": None,
+        "confidence": 0,
         "reasons": []
     }
 
-    # 1. Trend direction (higher TF)
-    curr_high = df_high.iloc[-1]
-    if curr_high["ema_fast"] > curr_high["ema_slow"]:
-        signal["trend"] = "bullish"
+    # Validate data
+    if df_high.empty or df_med.empty or df_low.empty:
+        signal["reasons"].append("Insufficient data")
+        return signal
+
+    # Last candles
+    h = df_high.iloc[-1]
+    m = df_med.iloc[-1]
+    l = df_low.iloc[-1]
+
+    # ───────────────────────────────────────────────
+    # 1) Trend direction (Higher Timeframe)
+    # ───────────────────────────────────────────────
+    if h["ema_fast"] > h["ema_slow"]:
+        trend = "bullish"
         signal["side"] = "LONG"
-    elif curr_high["ema_fast"] < curr_high["ema_slow"]:
-        signal["trend"] = "bearish"
+    elif h["ema_fast"] < h["ema_slow"]:
+        trend = "bearish"
         signal["side"] = "SHORT"
     else:
-        signal["reasons"].append("No clear EMA crossover on high TF")
+        signal["reasons"].append("No clear trend on HTF")
         return signal
 
-    # 2. Strong trend filter (ADX)
-    adx_high = df_high["adx"].iloc[-1]
-    if adx_high < config.ADX_THRESHOLD:
-        signal["reasons"].append(f"ADX too weak ({adx_high:.1f} < {config.ADX_THRESHOLD})")
+    # ───────────────────────────────────────────────
+    # 2) ADX filter (trend strength)
+    # ───────────────────────────────────────────────
+    if h["adx"] < config.ADX_THRESHOLD:
+        signal["reasons"].append(f"ADX too weak ({h['adx']:.1f})")
         return signal
 
-    # 3. Volume filter (momentum confirmation)
-    recent_vol = df_low["volume"].rolling(20).mean().iloc[-1]
-    curr_vol = df_low["volume"].iloc[-1]
-    if curr_vol < recent_vol * config.MIN_VOLUME_MULTIPLIER:
-        signal["reasons"].append("Insufficient volume")
+    # ───────────────────────────────────────────────
+    # 3) Volume filter on LTF
+    # ───────────────────────────────────────────────
+    vol_ma = df_low["volume"].rolling(20).mean().iloc[-1]
+    if l["volume"] < vol_ma * config.MIN_VOLUME_MULTIPLIER:
+        signal["reasons"].append("Low volume, momentum not confirmed")
         return signal
 
-    # 4. Low TF momentum
-    last = df_low.iloc[-1]
-    body = abs(last["close"] - last["open"])
-    rng = last["high"] - last["low"]
+    # ───────────────────────────────────────────────
+    # 4) Candle momentum (LTF confirmation)
+    # ───────────────────────────────────────────────
+    body = abs(l["close"] - l["open"])
+    rng = l["high"] - l["low"]
 
-    if signal["side"] == "LONG" and last["close"] > last["open"] and body > 0.6 * rng:
-        signal["setup"] = True
-    elif signal["side"] == "SHORT" and last["close"] < last["open"] and body > 0.6 * rng:
-        signal["setup"] = True
-    else:
-        signal["reasons"].append("No momentum/wick confirmation on low TF")
+    has_momentum = body > 0.55 * rng and rng > 0
+    direction_ok = (
+        (signal["side"] == "LONG" and l["close"] > l["open"]) or
+        (signal["side"] == "SHORT" and l["close"] < l["open"])
+    )
 
-    if signal["setup"]:
-        signal["entry"] = last["close"]
+    if not (has_momentum and direction_ok):
+        signal["reasons"].append("No LTF momentum confirmation")
+        return signal
 
+    # ───────────────────────────────────────────────
+    # 5) Everything passes → We have a setup
+    # ───────────────────────────────────────────────
+    signal["setup"] = True
+    signal["entry"] = float(l["close"])
+
+    # Build SL/TP using ATR from Medium TF
+    atr = float(m["atr"])
+    sl, tp = sl_tp_from_atr(signal["side"], signal["entry"], atr)
+    signal["sl"] = sl
+    signal["tp"] = tp
+
+    # Confidence score (simple heuristic)
+    conf = 50
+    conf += min(20, h["adx"])          # ADX strength adds confidence
+    conf += 10 if has_momentum else 0
+    conf += 10 if l["volume"] > vol_ma else 0
+    conf = min(conf, 100)
+
+    signal["confidence"] = conf
 
     return signal

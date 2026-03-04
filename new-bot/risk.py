@@ -1,5 +1,9 @@
 """
-Position sizing and SL/TP calculation.
+RISK MODULE (Professional 2026)
+--------------------------------
+Handles:
+- Position sizing for futures
+- ATR-based Stop Loss and Take Profit
 """
 
 import config
@@ -7,31 +11,39 @@ import config
 
 def position_size(balance: float, entry: float, stop: float) -> float:
     """
-    Calculate position size in base asset (e.g. ETH).
-    Applies leverage and strict safety cap.
+    Calculate SAFE position size (base currency amount).
+
+    Ensures:
+    - Risk is fixed percentage of balance
+    - Leverage limit obeyed
+    - Notional cap applied (Safety Factor)
     """
+
     if balance <= 0:
         return 0.0
 
-    risk_amount = balance * config.RISK_PER_TRADE
     stop_distance = abs(entry - stop)
-
     if stop_distance <= 0:
         return 0.0
 
+    # Risk amount in USDT
+    risk_amount = balance * config.RISK_PER_TRADE
+
+    # Size according to risk
     size_base = risk_amount / stop_distance
 
-    # Hard cap on notional value
+    # Apply notional safety cap
     max_notional = balance * config.LEVERAGE * config.SAFETY_FACTOR
     max_size = max_notional / entry
 
-    return min(size_base, max_size)
+    return max(min(size_base, max_size), 0.0)
 
 
 def sl_tp_from_atr(side: str, entry: float, atr: float) -> tuple:
     """
-    Return (stop_loss, take_profit) using ATR multipliers.
+    Build SL/TP using ATR and global multipliers.
     """
+
     entry = float(entry)
     atr = float(atr)
 
@@ -42,4 +54,4 @@ def sl_tp_from_atr(side: str, entry: float, atr: float) -> tuple:
         sl = entry + atr * config.SL_ATR_MULT
         tp = entry - atr * config.TP_ATR_MULT
 
-    return sl, tp
+    return float(sl), float(tp)
