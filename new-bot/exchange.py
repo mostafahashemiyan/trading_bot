@@ -20,7 +20,11 @@ class ExchangeClient:
         exchange_id = config.EXCHANGE_ID
         api_key = os.getenv("KUCOIN_API_KEY")
         api_secret = os.getenv("KUCOIN_API_SECRET")
-        api_password = os.getenv("KUCOIN_API_PASSWORD") or os.getenv("KUCOIN_PASSWORD")
+        api_password = (
+            os.getenv("KUCOIN_PASSPHRASE")
+            or os.getenv("KUCOIN_API_PASSWORD")
+            or os.getenv("KUCOIN_PASSWORD")
+        )
 
         if not all([api_key, api_secret, api_password]):
             raise ValueError("Missing KuCoin credentials in .env")
