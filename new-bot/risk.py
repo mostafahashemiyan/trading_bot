@@ -55,3 +55,82 @@ def sl_tp_from_atr(side: str, entry: float, atr: float) -> tuple:
         tp = entry - atr * config.TP_ATR_MULT
 
     return float(sl), float(tp)
+
+def validate_llm_levels(side: str, entry: float, sl: float, tp: float):
+    """
+    Validate stop-loss / take-profit levels proposed by the LLM.
+
+    Returns:
+        {
+            "valid": bool,
+            "reason": str,
+            "rr": float | None
+        }
+
+    Rules:
+    - LONG: sl < entry < tp
+    - SHORT: tp < entry < sl
+    - stop distance must be > 0
+    - risk/reward must satisfy config.LLM_MIN_RR
+    """
+
+    try:
+        side = str(side).upper()
+        entry = float(entry)
+        sl = float(sl)
+        tp = float(tp)
+    except Exception:
+        return {
+            "valid": False,
+            "reason": "Non-numeric LLM levels",
+            "rr": None
+        }
+
+    if side == "LONG":
+        if not (sl < entry < tp):
+            return {
+                "valid": False,
+                "reason": "Invalid LONG structure: require sl < entry < tp",
+                "rr": None
+            }
+        risk = entry - sl
+        reward = tp - entry
+
+    elif side == "SHORT":
+        if not (tp < entry < sl):
+            return {
+                "valid": False,
+                "reason": "Invalid SHORT structure: require tp < entry < sl",
+                "rr": None
+            }
+        risk = sl - entry
+        reward = entry - tp
+
+    else:
+        return {
+            "valid": False,
+            "reason": "Unknown side",
+            "rr": None
+        }
+
+    if risk <= 0:
+        return {
+            "valid": False,
+            "reason": "Stop distance must be positive",
+            "rr": None
+        }
+
+    rr = reward / risk if risk > 0 else None
+
+    if rr is None or rr < config.LLM_MIN_RR:
+        return {
+            "valid": False,
+            "reason": f"RR too low ({rr:.2f})" if rr is not None else "RR invalid",
+            "rr": rr
+        }
+
+    return {
+        "valid": True,
+        "reason": "LLM levels validated",
+        "rr": rr
+    }

@@ -1,0 +1,3 @@
+{"event": "system", "message": "Bot started (DRY_RUN=True)", "timestamp": "2026-03-09T23:04:41.136394"}
+{"event": "system", "message": "CRASH: module 'config' has no attribute 'MED_TF'", "timestamp": "2026-03-09T23:04:41.140916"}
+{"event": "system", "message": "Bot started (DRY_RUN=True)", "timestamp": "2026-03-09T23:05:46.416334"}

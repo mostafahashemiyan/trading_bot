@@ -159,19 +159,36 @@ class TradeTracker:
     # ───────────────────────────────────────────
     # Closing Trades
     # ───────────────────────────────────────────
-    def close_trade(self, symbol: str, outcome: str):
+    def close_trade(
+        self,
+        symbol: str,
+        outcome: str,
+        exit_price: Optional[float] = None,
+        pnl: Optional[float] = None,
+    ):
         new_list = []
+        closed_any = False
+        now_iso = datetime.utcnow().isoformat() + "Z"
 
         for t in self.open_trades:
             if t["symbol"] == symbol and t["status"] == "OPEN":
                 t["status"] = "CLOSED"
                 t["outcome"] = outcome
+                t["closed_at"] = now_iso
+
+                if exit_price is not None:
+                    t["exit_price"] = exit_price
+                if pnl is not None:
+                    t["pnl"] = pnl
+
                 self._append_history(t)
+                closed_any = True
             else:
                 new_list.append(t)
 
         self.open_trades = new_list
         self._save_open()
+        return closed_any
 
     # ───────────────────────────────────────────
     # Getters

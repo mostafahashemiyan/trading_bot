@@ -61,11 +61,89 @@ class ExchangeClient:
 
     def get_position(self, symbol: str):
         try:
-            pos = self.exchange.fetch_positions([symbol])
-            return pos[0] if pos else None
+            positions = self.exchange.fetch_positions([symbol])
+
+            if not positions:
+                return None
+
+            for pos in positions:
+                if pos.get("symbol") != symbol:
+                    continue
+
+                contracts = pos.get("contracts")
+                if contracts is None:
+                    contracts = pos.get("contractSize")
+
+                try:
+                    contracts = float(contracts or 0)
+                except Exception:
+                    contracts = 0.0
+
+                side = pos.get("side")
+                if contracts > 0 and side in {"long", "short"}:
+                    return pos
+
+            return None
         except Exception:
             return None
 
+    def get_last_price(self, symbol: str):
+        try:
+            ticker = self.exchange.fetch_ticker(symbol)
+            last = ticker.get("last")
+
+            if last is None:
+                bid = ticker.get("bid")
+                ask = ticker.get("ask")
+                if bid is not None and ask is not None:
+                    last = (float(bid) + float(ask)) / 2.0
+
+            return float(last) if last is not None else None
+        except Exception:
+            return None
+            
+    def get_spread_info(self, symbol: str):
+        """
+        Returns live spread info:
+        {
+            "bid": float | None,
+            "ask": float | None,
+            "spread": float | None,
+            "spread_pct": float | None
+        }
+        """
+        try:
+            ticker = self.exchange.fetch_ticker(symbol)
+
+            bid = ticker.get("bid")
+            ask = ticker.get("ask")
+
+            if bid is None or ask is None or bid <= 0 or ask <= 0 or ask < bid:
+                return {
+                    "bid": None,
+                    "ask": None,
+                    "spread": None,
+                    "spread_pct": None
+                }
+
+            spread = float(ask) - float(bid)
+            mid = (float(ask) + float(bid)) / 2.0
+            spread_pct = spread / mid if mid > 0 else None
+
+            return {
+                "bid": float(bid),
+                "ask": float(ask),
+                "spread": float(spread),
+                "spread_pct": float(spread_pct) if spread_pct is not None else None
+            }
+
+        except Exception:
+            return {
+                "bid": None,
+                "ask": None,
+                "spread": None,
+                "spread_pct": None
+            }
     # ───────────────────────────────────────────────
     # Position conversion helpers
     # ───────────────────────────────────────────────

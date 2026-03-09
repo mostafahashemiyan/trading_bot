@@ -41,6 +41,10 @@ ATR_PERIOD = 14
 ADX_PERIOD = 14
 ADX_THRESHOLD = 25   # strict trend filter (conservative)
 
+# Trend quality filters
+EMA_SLOPE_LOOKBACK = 3
+MIN_EMA_DISTANCE_ATR = 0.20   # ema distance must be at least 20% of ATR
+
 # ─────────────────────────────────────────────────────────────
 # Risk Management
 # ─────────────────────────────────────────────────────────────
@@ -63,6 +67,7 @@ COOLDOWN_CANDLES = 12           # minimum candles between trades
 # ─────────────────────────────────────────────────────────────
 COMMISSION = 0.0006
 SLIPPAGE_PCT = 0.0005
+MAX_SPREAD_PCT = 0.0015   # 0.15%
 
 # ─────────────────────────────────────────────────────────────
 # LLM Gatekeeper
@@ -73,7 +78,8 @@ LLM_MODEL = "gpt-4o-mini"
 LLM_MIN_RR = 2.2
 LLM_MIN_ADX = 25
 LLM_TEMPERATURE = 0.15
-
+LLM_TIMEOUT_SECONDS = 2.0
+LLM_FAILSAFE_DECISION = "REJECT"   # safest option for live trading
 # ─────────────────────────────────────────────────────────────
 # Bot Behavior
 # ─────────────────────────────────────────────────────────────

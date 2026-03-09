@@ -1,0 +1,27 @@
+[
+  {
+    "symbol": "ETH/USDT:USDT",
+    "strategy_signal": {
+      "trend": "bearish",
+      "setup": false,
+      "side": "SHORT",
+      "entry": null,
+      "stop": null,
+      "tp": null,
+      "rr": null,
+      "confidence": 0,
+      "reasons": [
+        "Low volume, momentum not confirmed"
+      ]
+    },
+    "decision": {
+      "decision": "NO_TRADE",
+      "side": null,
+      "confidence": 0,
+      "reason": "Strategy conditions not met"
+    },
+    "trade_result": null,
+    "timestamp": "2026-03-09T23:05:47.546635Z",
+    "time": "2026-03-09T23:05:47.546635Z"
+  }
+]
