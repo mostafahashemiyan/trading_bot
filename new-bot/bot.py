@@ -24,6 +24,7 @@ from logger import log, log_system
 import config
 
 load_dotenv()
+
 # ───────────────────────────────────────────────
 # Initialize Exchange + Tracker
 # ───────────────────────────────────────────────
@@ -38,7 +39,7 @@ async def fetch_ohlcv(symbol, timeframe, limit=200):
     for attempt in range(config.RETRY_ATTEMPTS):
         try:
             return exchange.fetch_ohlcv(symbol, timeframe, limit=limit)
-        except Exception as e:
+        except Exception:
             await asyncio.sleep(config.RETRY_DELAY * (attempt + 1))
     return []
 
@@ -65,6 +66,26 @@ async def scan_symbol(symbol: str):
 
     if df_h.empty or df_m.empty or df_l.empty:
         log("error", {"msg": "Insufficient data"}, symbol)
+
+        tracker.save_decision_report(
+            symbol=symbol,
+            strategy_signal={
+                "setup": False,
+                "side": None,
+                "entry": None,
+                "sl": None,
+                "tp": None,
+                "confidence": 0,
+                "reasons": ["Insufficient data"],
+            },
+            decision={
+                "decision": "NO_TRADE",
+                "side": None,
+                "confidence": 0,
+                "reason": "Insufficient data",
+            },
+            trade_result=None,
+        )
         return
 
     # ------------------------------------------------------------
@@ -74,6 +95,18 @@ async def scan_symbol(symbol: str):
 
     if not signal["setup"]:
         log("signal", {"msg": "No setup", "reasons": signal["reasons"]}, symbol)
+
+        tracker.save_decision_report(
+            symbol=symbol,
+            strategy_signal=signal,
+            decision={
+                "decision": "NO_TRADE",
+                "side": None,
+                "confidence": 0,
+                "reason": "Strategy conditions not met",
+            },
+            trade_result=None,
+        )
         return
 
     entry = signal["entry"]
@@ -88,6 +121,17 @@ async def scan_symbol(symbol: str):
     log("llm_decision", llm_res, symbol)
 
     if llm_res["decision"] != "APPROVE":
+        tracker.save_decision_report(
+            symbol=symbol,
+            strategy_signal=signal,
+            decision={
+                "decision": "NO_TRADE",
+                "side": side,
+                "confidence": llm_res.get("confidence", 0),
+                "reason": llm_res.get("reason", "LLM rejected trade"),
+            },
+            trade_result=None,
+        )
         return
 
     # ------------------------------------------------------------
@@ -98,6 +142,22 @@ async def scan_symbol(symbol: str):
 
     if size <= 0 or size * entry < config.MIN_NOTIONAL_VALUE:
         log("error", {"msg": "Position too small"}, symbol)
+
+        tracker.save_decision_report(
+            symbol=symbol,
+            strategy_signal=signal,
+            decision={
+                "decision": "NO_TRADE",
+                "side": side,
+                "confidence": llm_res.get("confidence", signal.get("confidence", 0)),
+                "reason": "Position too small",
+            },
+            trade_result={
+                "balance": balance,
+                "size": size,
+                "min_notional": config.MIN_NOTIONAL_VALUE,
+            },
+        )
         return
 
     # ------------------------------------------------------------
@@ -124,6 +184,28 @@ async def scan_symbol(symbol: str):
         "size": size,
         "exchange_res": trade_res
     }, symbol)
+
+    decision_status = "TRADE_OPENED"
+    decision_reason = llm_res.get("reason", "Approved and executed")
+
+    if isinstance(trade_res, dict) and trade_res.get("error"):
+        decision_status = "TRADE_FAILED"
+        decision_reason = trade_res.get("error", "Trade execution failed")
+
+    tracker.save_decision_report(
+        symbol=symbol,
+        strategy_signal=signal,
+        decision={
+            "decision": decision_status,
+            "side": side,
+            "confidence": llm_res.get("confidence", signal.get("confidence", 0)),
+            "reason": decision_reason,
+        },
+        trade_result=trade_res,
+    )
+
+    if isinstance(trade_res, dict) and trade_res.get("error"):
+        return
 
     # Track open trades
     tracker.open_trade(

@@ -5,6 +5,7 @@ Tracks:
 - Open trades
 - Closed trades
 - Trade history persistence
+- Per-run decision reports
 
 Used by bot.py to store full records of trading activity.
 """
@@ -20,6 +21,7 @@ os.makedirs(DIR, exist_ok=True)
 
 OPEN_FILE = os.path.join(DIR, "open_trades.json")
 HISTORY_FILE = os.path.join(DIR, "trades_history.json")
+REPORT_FILE = os.path.join(DIR, "decision_reports.json")
 
 
 # ───────────────────────────────────────────────
@@ -29,15 +31,15 @@ def _read(path: str, default):
     if not os.path.exists(path):
         return default
     try:
-        with open(path, "r") as f:
+        with open(path, "r", encoding="utf-8") as f:
             return json.load(f)
     except Exception:
         return default
 
 
 def _write(path: str, data):
-    with open(path, "w") as f:
-        json.dump(data, f, indent=2)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
 
 
 # ───────────────────────────────────────────────
@@ -55,6 +57,70 @@ class TradeTracker:
         hist = _read(HISTORY_FILE, [])
         hist.append(trade)
         _write(HISTORY_FILE, hist)
+
+    def _append_report(self, report: Dict[str, Any]):
+        reports = _read(REPORT_FILE, [])
+        reports.append(report)
+        _write(REPORT_FILE, reports)
+
+    # ───────────────────────────────────────────
+    # Decision Reports
+    # ───────────────────────────────────────────
+    def save_decision_report(
+        self,
+        symbol: str,
+        strategy_signal: Dict[str, Any],
+        decision: Dict[str, Any],
+        trade_result: Optional[Dict[str, Any]] = None,
+    ):
+        entry = strategy_signal.get("entry")
+        sl = strategy_signal.get("sl")
+        tp = strategy_signal.get("tp")
+        side = strategy_signal.get("side")
+
+        trend = None
+        if side == "LONG":
+            trend = "bullish"
+        elif side == "SHORT":
+            trend = "bearish"
+
+        rr = None
+        try:
+            if entry is not None and sl is not None and tp is not None and entry != sl:
+                rr = abs((tp - entry) / (entry - sl))
+        except Exception:
+            rr = None
+
+        now_iso = datetime.utcnow().isoformat() + "Z"
+
+        report = {
+            "symbol": symbol,
+            "strategy_signal": {
+                "trend": trend,
+                "setup": strategy_signal.get("setup"),
+                "side": side,
+                "entry": entry,
+                "stop": sl,
+                "tp": tp,
+                "rr": rr,
+                "confidence": strategy_signal.get("confidence", 0),
+                "reasons": strategy_signal.get("reasons", []),
+            },
+            "decision": {
+                "decision": decision.get("decision"),
+                "side": decision.get("side"),
+                "confidence": decision.get("confidence", 0),
+                "reason": decision.get("reason"),
+            },
+            "trade_result": trade_result,
+            "timestamp": now_iso,
+            "time": now_iso,
+        }
+
+        self._append_report(report)
+
+    def get_reports(self) -> List[Dict[str, Any]]:
+        return _read(REPORT_FILE, [])
 
     # ───────────────────────────────────────────
     # Opening Trades
