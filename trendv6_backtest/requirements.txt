@@ -1,0 +1,9 @@
+# Project dependencies (pinned where available)
+ccxt==4.5.54         # Multi-exchange trading library (KuCoin + Binance)
+pandas==3.0.3        # Data manipulation
+pandas-ta>=0.3.14b   # Technical indicators (install may require build dependencies)
+openai==2.37.0       # OpenAI Python SDK
+openai-agents>=0.6.0 # OpenAI Agents SDK
+requests==2.34.2     # HTTP library
+ta==0.11.0           # Technical analysis library
+python-dotenv==1.2.2 # Load .env files into environment
